@@ -1,0 +1,64 @@
+===================================================================================
+                       Volatile System Memory Pool (RAM Pipeline)
+===================================================================================
+
+ [THREAD 1: Keithley SMU] ───(Put Step)───► [data_queue] ◄───(Get Step)─── [THREAD 2: Keysight OPM]
+             │                                      ▲                                     │
+     (Poll Safety Flag)                             │                             (Poll Safety Flag)
+             ▼                                      │                                     ▼
+ [ emergency_interrupt ] ◄────(Trigger Signal)──── [THREAD 3: Core Thermal Monitor] ◄───────[Thermal Sensor]
+             │
+             ▼ (Active if Core Temp > 45.0°C)
+ [ Cascading Hardware Cutoff: OUTP OFF ]
+
+===================================================================================
+              Downstream Analytics Pipeline (Executed Post Thread Teardown)
+===================================================================================
+
+     [Raw Results Registry] ──► [Pandas DataFrame] ──► [Vectorized Dropna & SI Units Conversion]
+                                                                │
+                                                                ▼
+     [Flat Vector Plot: png] ◄── [Matplotlib Core] ◄── [SciPy: curve_fit Optimization & pcov Error Extraction]
+
+
+===================================================================================
+                    End-to-End System Execution Flow Chart
+===================================================================================
+
+                [ Master Pipeline Execution Trigger ]
+                                  │
+                                  ▼
+                Initialize Thread-Safe Memory Registries & Handshake Flags
+                (data_queue, step_ready_event, step_processed_event)
+                                  │
+                                  ▼
+                [ Launch Concurrent Task Deployments: .start() ]
+                                  │
+     ┌────────────────────────────┼────────────────────────────┐
+     ▼                            ▼                            ▼
+[THREAD 1: Sourcing Exec]    [THREAD 2: Sensing Exec]     [THREAD 3: Safety Monitor]
+• Drive Keithley SMU current • Kernel-level blocked state • Independent sampling loop
+• Push current step to Queue • Wait for Thread 1 token    • Monitor physical core temp
+• Set step_ready_event flag  • Query Keysight OPM response • Target hard thermal cutoff
+• Wait for Thread 2 feedback • Set step_processed_event    • Set emergency_interrupt token
+     │                            │                            │
+     └────────────────────────────┼────────────────────────────┘
+                                  │
+                                  ▼
+                [ Synchronize Thread Teardown Boundary: .join() ]
+                *Forced post baseline sweep completion or failsafe intercept*
+                                  │
+                                  ▼
+                [ Ingest Purified Database Matrix: Pandas Pipeline ]
+                Drop volatile bus anomalies and scale matrices to Amperes & Watts
+                                  │
+                                  ▼
+                [ Extract Structural Calibration Coefficients: SciPy Suite ]
+                Execute non-linear regression and map covariance uncertainty bounds
+                                  │
+                                  ▼
+                [ Generate Unified Analytical Graphics: Matplotlib ]
+                Compile aligned dual-axis viewports using an engineered 3:1 spatial scale
+                                  │
+                                  ▼
+                [ Pipeline Export Asset: liv_characterization_suite.png ]
