@@ -88,3 +88,6 @@ The final visualization panel executes deep signal tracing by compiling a synchr
 *   **Visualization Layer:** Matplotlib (LaTeX-integrated vector graphics engine deployed at `dpi=300`)
 *   **Communication Protocol Standard:** IEEE-488.2 / SCPI Architecture
 *   **Simulation Simulation Environments:** Ansys Zemax OpticStudio & Analog Devices LTspice (v26.0.2)
+
+## License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
