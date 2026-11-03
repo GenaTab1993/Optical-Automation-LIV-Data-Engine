@@ -58,7 +58,97 @@
                                   │
                                   ▼
                 [ Generate Unified Analytical Graphics: Matplotlib ]
+
+
                 Compile aligned dual-axis viewports using an engineered 3:1 spatial scale
                                   │
                                   ▼
                 [ Pipeline Export Asset: liv_characterization_suite.png ]
+
+
+
+===================================================================================================
+===================================================================================================
+
+
+
+==================================================================================================
+           LIV DATA ENGINE — TRI-THREAD CONCURRENCY & BUS EXECUTION FLOW CHART
+==================================================================================================
+
+ [ MAIN EXECUTION START ] 
+          │
+          ├──> RM Initialization (pyvisa.ResourceManager("@sim")) ──> [SUCCESS / RM Mapped]
+          │
+          ├──> Launch Thread 1: source_smu_worker()
+          ├──> Launch Thread 2: receiver_sensor_worker()
+          └──> Launch Thread 3: thermal_monitor_worker()
+          
+
+==================================================================================================
+ THREAD 1: SOURCE SMU WORKER (Keithley)      │  THREAD 2: RECEIVER SENSOR WORKER (Keysight)
+==================================================================================================
+                                             │
+ rm.open_resource(source_address)            │  rm.open_resource(sensor_address)
+    │                                        │     │
+    ├──[FAIL (VisaIOError)]                  │     ├──[FAIL (VisaIOError)]
+    │   └── "[THREAD 1 -> FAULT] Sourcing..."│     │   └── "[THREAD 2 -> FAULT] Sensor..."
+    │                                        │     │
+    └──[SUCCESS]                             │     └──[SUCCESS]
+        │                                    │         │
+     *RST / *CLS / Compliance locked         │      *RST / Timeout configured
+        │                                    │         │
+  [ START SWEEP LOOP ]                       │   [ START MONITORING LOOP ]
+        │                                    │         │
+  Is emergency_interrupt set?                │   Is emergency_interrupt set?
+    ├──[YES] ──> Break loop                  │     ├──[YES] ──> Break loop
+    └──[NO]                                  │     └──[NO]
+        │                                    │         │
+  Is i_target != 0.0?                        │   Wait for step_ready_event (timeout=0.1)
+    ├──[YES]                                 │     │
+    │   └── Wait for step_processed_event    │     ├──[TIMEOUT / Not Ready] ──> Re-loop
+    └──[NO]                                  │     └──[READY] ──> clear() event
+        │                                              │
+  Inject Current (device_source.write)       │   Get current_step from data_queue
+        │                                    │         │
+  Push current_step to data_queue            │   Query Power (device_sensor.query("SOUR:POW?"))
+        │                                    │         │
+  Trigger step_ready_event.set() ───────────┼────>├──[EMPTY / Sim Mode]
+        │                                    │     │   └── Compute Fallback Math Model
+  time.sleep(0.05) [Settling Time]           │     └──[SUCCESS]
+        │                                    │         └── Convert raw_power to float
+  (Loop next step until current_steps ends)   │         │
+        │                                    │   Print: "   ↳ [THREAD 2 -> Keysight] Captured..."
+  Wait for final step finish                 │         │
+        │                                    │   Append to collected_results in RAM
+  device_source.write("OUTP OFF")            │         │
+  Print: "[THREAD 1 -> SAFE-STATE] Laser..." │   Trigger data_queue.task_done()
+        │                                    │         │
+  sweep_active = False                       │   Trigger step_processed_event.set() ──┐
+  step_ready_event.set()                     │                                        │
+        │                                    │   (Loop continuously until queue is empty)
+  device_source.close()                      │                                        │
+  Print: "[THREAD 1] Sourcing resource..."   │   device_sensor.close()                │
+        │                                    │   Print: "[THREAD 2] Sensing resource..."
+  Print: "[THREAD 1] Source sweep..."        │                                        │
+  [THREAD 1 TERMINATES]                      │   Print: "[THREAD 2] Receiver monitoring..."
+                                             │   [THREAD 2 TERMINATES]
+                                             │
+==================================================================================================
+                 DATA SCIENCE POST-PROCESSING PIPELINE (After .join())
+==================================================================================================
+                                             │
+                                     df_raw.dropna()
+                                             │
+                                     curve_fit() optimization
+                                             │
+              ┌──────────────────────────────┴──────────────────────────────┐
+              ▼                                                             ▼
+       [SUCCESS / popt extracted]                                    [FAIL (curve_fit)]
+              │                                                             │
+ Print: "   ↳ Slope Efficiency (a)..."                               Raise OptimizationError
+ Print: "   ↳ Lasing Axis Intercept (b)..."                                 │
+              │                                                             │
+      plt.savefig()                                                         │
+              │                                                             │
+ Print: "[SUCCESS] GRAND INTEGRATION COMPLETE..." ◄─────────────────────────┘
